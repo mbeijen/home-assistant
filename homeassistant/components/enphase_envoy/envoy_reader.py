@@ -227,9 +227,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             raise
 
     async def _fetch_owner_token_json(self):
-        """Try to fetch the owner token json from Enlighten API
-        :return:
-        """
+        """Try to fetch the owner token json from Enlighten API."""
         async with self.async_client as client:
             # login to the enlighten UI
 
@@ -314,7 +312,8 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         await self._refresh_token_cookies()
 
     async def _refresh_token_cookies(self):
-        """Refresh the client's cookie with the token (if valid)
+        """Refresh the client's cookie with the token (if valid).
+
         :returns True if cookie refreshed, False if it couldn't be.
         """
         # Create HTTP Header
@@ -415,7 +414,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         return
 
     async def detect_model(self):
-        """Method to determine if the Envoy supports consumption values or only production."""
+        """Determine if the Envoy supports consumption values or only production."""
         # If a password was not given as an argument when instantiating
         # the EnvoyReader object than use the last six numbers of the serial
         # number as the password.  Otherwise use the password argument value.
@@ -433,7 +432,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         ):
             raise RuntimeError(
                 "Could not connect to Envoy model. "
-                + "Appears your Envoy is running firmware that requires secure communcation. "
+                + "It appears your Envoy is running firmware that requires secure communication. "
                 + "Please enter in the needed Enlighten credentials during setup."
             )
 
@@ -480,7 +479,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         )
 
     async def get_serial_number(self):
-        """Method to get last six digits of Envoy serial number for auth."""
+        """Get last six digits of Envoy serial number for auth."""
         full_serial = await self.get_full_serial_number()
         if full_serial:
             gen_passwd = EnvoyUtils.get_password(full_serial, self.username)
@@ -490,7 +489,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
                 self.password = gen_passwd
 
     async def get_full_serial_number(self):
-        """Method to get the  Envoy serial number."""
+        """Get the  Envoy serial number."""
         response = await self._async_fetch_with_retry(
             f"http{self.https_flag}://{self.host}/info.xml",
             follow_redirects=True,
