@@ -5,9 +5,7 @@ from datetime import timedelta
 import logging
 
 import async_timeout
-from .envoy_reader import EnvoyReader
 import httpx
-from numpy import isin
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
@@ -15,7 +13,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import COORDINATOR, DOMAIN, NAME, PLATFORMS, SENSORS, CONF_USE_ENLIGHTEN, CONF_SERIAL
+from .const import (
+    CONF_SERIAL,
+    CONF_USE_ENLIGHTEN,
+    COORDINATOR,
+    DOMAIN,
+    NAME,
+    PLATFORMS,
+    SENSORS,
+)
+from .envoy_reader import EnvoyReader
 
 SCAN_INTERVAL = timedelta(seconds=60)
 
@@ -35,10 +42,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         enlighten_user=config[CONF_USERNAME],
         enlighten_pass=config[CONF_PASSWORD],
         inverters=True,
-#        async_client=get_async_client(hass),
+        #        async_client=get_async_client(hass),
         use_enlighten_owner_token=config.get(CONF_USE_ENLIGHTEN, False),
         enlighten_serial_num=config[CONF_SERIAL],
-        https_flag='s' if config.get(CONF_USE_ENLIGHTEN, False) else ''
+        https_flag="s" if config.get(CONF_USE_ENLIGHTEN, False) else "",
     )
 
     async def async_update_data():
@@ -67,7 +74,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                         data[description.key] = battery_dict
 
-                elif (description.key not in ["current_battery_capacity", "total_battery_percentage"]):
+                elif description.key not in [
+                    "current_battery_capacity",
+                    "total_battery_percentage",
+                ]:
                     data[description.key] = await getattr(
                         envoy_reader, description.key
                     )()

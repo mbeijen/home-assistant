@@ -2,15 +2,14 @@
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
-    BinarySensorEntityDescription
+    BinarySensorEntityDescription,
 )
-
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import ENERGY_WATT_HOUR, POWER_WATT, Platform, PERCENTAGE
+from homeassistant.const import ENERGY_WATT_HOUR, PERCENTAGE, POWER_WATT, Platform
 
 DOMAIN = "enphase_envoy"
 
@@ -90,20 +89,20 @@ SENSORS = (
         name="Battery",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.BATTERY
+        device_class=SensorDeviceClass.BATTERY,
     ),
     SensorEntityDescription(
         key="total_battery_percentage",
         name="Total Battery Percentage",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT
+        state_class=SensorStateClass.MEASUREMENT,
     ),
     SensorEntityDescription(
         key="current_battery_capacity",
         name="Current Battery Capacity",
         native_unit_of_measurement=ENERGY_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.ENERGY
+        device_class=SensorDeviceClass.ENERGY,
     ),
 )
 
@@ -112,7 +111,7 @@ BATTERY_ENERGY_DISCHARGED_SENSOR = SensorEntityDescription(
     name="Battery Energy Discharged",
     native_unit_of_measurement=ENERGY_WATT_HOUR,
     state_class=SensorStateClass.TOTAL,
-    device_class=SensorDeviceClass.ENERGY
+    device_class=SensorDeviceClass.ENERGY,
 )
 
 BATTERY_ENERGY_CHARGED_SENSOR = SensorEntityDescription(
@@ -120,11 +119,11 @@ BATTERY_ENERGY_CHARGED_SENSOR = SensorEntityDescription(
     name="Battery Energy Charged",
     native_unit_of_measurement=ENERGY_WATT_HOUR,
     state_class=SensorStateClass.TOTAL,
-    device_class=SensorDeviceClass.ENERGY
+    device_class=SensorDeviceClass.ENERGY,
 )
 
 GRID_STATUS_BINARY_SENSOR = BinarySensorEntityDescription(
     key="grid_status",
     name="Grid Status",
-    device_class=BinarySensorDeviceClass.CONNECTIVITY
+    device_class=BinarySensorDeviceClass.CONNECTIVITY,
 )

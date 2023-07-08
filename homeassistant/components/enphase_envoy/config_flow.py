@@ -5,7 +5,6 @@ import contextlib
 import logging
 from typing import Any
 
-from .envoy_reader import EnvoyReader
 import httpx
 import voluptuous as vol
 
@@ -16,7 +15,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN, CONF_SERIAL, CONF_USE_ENLIGHTEN
+from .const import CONF_SERIAL, CONF_USE_ENLIGHTEN, DOMAIN
+from .envoy_reader import EnvoyReader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,10 +32,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> EnvoyRead
         enlighten_user=data[CONF_USERNAME],
         enlighten_pass=data[CONF_PASSWORD],
         inverters=False,
-#        async_client=get_async_client(hass),
+        #        async_client=get_async_client(hass),
         use_enlighten_owner_token=data.get(CONF_USE_ENLIGHTEN, False),
         enlighten_serial_num=data[CONF_SERIAL],
-        https_flag='s' if data.get(CONF_USE_ENLIGHTEN,False) else ''
+        https_flag="s" if data.get(CONF_USE_ENLIGHTEN, False) else "",
     )
 
     try:
@@ -93,13 +93,18 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         serial = discovery_info.properties["serialnum"]
         await self.async_set_unique_id(serial)
 
-        #75 If system option to enable newly discoverd entries is off (by user) and uniqueid is this serial then skip updating ip
+        # 75 If system option to enable newly discoverd entries is off (by user) and uniqueid is this serial then skip updating ip
         for entry in self._async_current_entries(include_ignore=False):
             if entry.pref_disable_new_entities and entry.unique_id is not None:
                 if entry.unique_id == serial:
-                    _LOGGER.debug("Envoy autodiscovery/ip update disabled for: %s, IP detected: %s %s",serial, discovery_info.host,entry.unique_id)
+                    _LOGGER.debug(
+                        "Envoy autodiscovery/ip update disabled for: %s, IP detected: %s %s",
+                        serial,
+                        discovery_info.host,
+                        entry.unique_id,
+                    )
                     return self.async_abort(reason="pref_disable_new_entities")
-                
+
         # autodiscovery is updating the ip address of an existing envoy with matching serial to new detected ip adress
         self.ip_address = discovery_info.host
         self._abort_if_unique_id_configured({CONF_HOST: self.ip_address})
