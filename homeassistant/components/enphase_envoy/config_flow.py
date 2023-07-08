@@ -1,12 +1,11 @@
 """Config flow for Enphase Envoy integration."""
 from __future__ import annotations
 
-from collections.abc import Mapping
 import contextlib
 import logging
 from typing import Any
 
-from envoy_reader.envoy_reader import EnvoyReader
+from .envoy_reader import EnvoyReader
 import httpx
 import voluptuous as vol
 
@@ -16,26 +15,27 @@ from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNA
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.httpx_client import get_async_client
-from homeassistant.util.network import is_ipv4_address
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_SERIAL, CONF_USE_ENLIGHTEN
 
 _LOGGER = logging.getLogger(__name__)
 
 ENVOY = "Envoy"
-
-CONF_SERIAL = "serial"
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> EnvoyReader:
     """Validate the user input allows us to connect."""
     envoy_reader = EnvoyReader(
         data[CONF_HOST],
-        data[CONF_USERNAME],
-        data[CONF_PASSWORD],
+        username=data[CONF_USERNAME],
+        password=data[CONF_PASSWORD],
+        enlighten_user=data[CONF_USERNAME],
+        enlighten_pass=data[CONF_PASSWORD],
         inverters=False,
-        async_client=get_async_client(hass),
+#        async_client=get_async_client(hass),
+        use_enlighten_owner_token=data.get(CONF_USE_ENLIGHTEN, False),
+        enlighten_serial_num=data[CONF_SERIAL],
+        https_flag='s' if data.get(CONF_USE_ENLIGHTEN,False) else ''
     )
 
     try:
@@ -73,6 +73,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema[vol.Optional(CONF_USERNAME, default=self.username or "envoy")] = str
         schema[vol.Optional(CONF_PASSWORD, default="")] = str
+        schema[vol.Optional(CONF_SERIAL, default=self.unique_id)] = str
+        schema[vol.Optional(CONF_USE_ENLIGHTEN)] = bool
         return vol.Schema(schema)
 
     @callback
@@ -88,10 +90,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: zeroconf.ZeroconfServiceInfo
     ) -> FlowResult:
         """Handle a flow initialized by zeroconf discovery."""
-        if not is_ipv4_address(discovery_info.host):
-            return self.async_abort(reason="not_ipv4_address")
         serial = discovery_info.properties["serialnum"]
         await self.async_set_unique_id(serial)
+
+        #75 If system option to enable newly discoverd entries is off (by user) and uniqueid is this serial then skip updating ip
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.pref_disable_new_entities and entry.unique_id is not None:
+                if entry.unique_id == serial:
+                    _LOGGER.debug("Envoy autodiscovery/ip update disabled for: %s, IP detected: %s %s",serial, discovery_info.host,entry.unique_id)
+                    return self.async_abort(reason="pref_disable_new_entities")
+                
+        # autodiscovery is updating the ip address of an existing envoy with matching serial to new detected ip adress
         self.ip_address = discovery_info.host
         self._abort_if_unique_id_configured({CONF_HOST: self.ip_address})
         for entry in self._async_current_entries(include_ignore=False):
@@ -111,7 +120,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_user()
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
+    async def async_step_reauth(self, user_input):
         """Handle configuration by re-auth."""
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
