@@ -102,6 +102,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         https_flag="",
         use_enlighten_owner_token=False,
         token_refresh_buffer_seconds=0,
+        store=None,
     ):
         """Init the EnvoyReader."""
         self.host = host.lower()
@@ -129,9 +130,29 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         self.enlighten_site_id = enlighten_site_id
         self.enlighten_serial_num = enlighten_serial_num
         self.https_flag = https_flag
-        self._token = ""
         self.use_enlighten_owner_token = use_enlighten_owner_token
         self.token_refresh_buffer_seconds = token_refresh_buffer_seconds
+
+        self._store = store
+        self._store_data = {}
+        self._store_update_pending = False
+
+    @property
+    def _token(self):
+        return self._store_data.get("token", "")
+
+    @_token.setter
+    def _token(self, token_value):
+        self._store_data["token"] = token_value
+        self._store_update_pending = True
+
+    async def _sync_store(self):
+        if self._store and not self._store_data:
+            self._store_data = await self._store.async_load() or {}
+
+        if self._store and self._store_update_pending:
+            self._store_update_pending = False
+            await self._store.async_save(self._store_data)
 
     @property
     def async_client(self):
