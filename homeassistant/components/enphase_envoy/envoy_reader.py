@@ -8,7 +8,7 @@ import logging
 import re
 import time
 
-from bs4 import BeautifulSoup
+import xmltodict
 from envoy_utils.envoy_utils import EnvoyUtils
 import httpx
 import jwt
@@ -45,11 +45,9 @@ ENVOY_MODEL_LEGACY = "P0"
 LOGIN_URL = "https://entrez.enphaseenergy.com/login_main_page"
 TOKEN_URL = "https://entrez.enphaseenergy.com/entrez_tokens"
 
-# paths for the enlighten 6 month owner token
-ENLIGHTEN_AUTH_FORM_URL = "https://enlighten.enphaseenergy.com"
-ENLIGHTEN_TOKEN_URL = (
-    "https://enlighten.enphaseenergy.com/entrez-auth-token?serial_num={}"
-)
+# paths for the enlighten 1 year owner token
+ENLIGHTEN_AUTH_URL = "https://enlighten.enphaseenergy.com/login/login.json"
+ENLIGHTEN_TOKEN_URL = "https://entrez.enphaseenergy.com/tokens"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -227,13 +225,19 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
                         if not could_refresh_cookies:
                             await self._getEnphaseToken()
                         continue
-                    _LOGGER.debug("Fetched from %s: %s: %s", url, resp, resp.text)
+                    _LOGGER.debug(
+                        "Fetched (%s) from %s: %s: %s",
+                        attempt + 1,
+                        url,
+                        resp,
+                        resp.text,
+                    )
                     return resp
             except httpx.TransportError:
                 if attempt == 2:
                     raise
 
-    async def _async_post(self, url, data, cookies=None, **kwargs):
+    async def _async_post(self, url, data=None, cookies=None, **kwargs):
         _LOGGER.debug("HTTP POST Attempt: %s", url)
         # _LOGGER.debug("HTTP POST Data: %s", data)
         try:
@@ -250,107 +254,54 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
     async def _fetch_owner_token_json(self):
         """Try to fetch the owner token json from Enlighten API."""
         async with self.async_client as client:
-            # login to the enlighten UI
+            # login to enlighten website
 
-            resp = await client.get(ENLIGHTEN_AUTH_FORM_URL)
-            soup = BeautifulSoup(resp.text, features="html.parser")
-            # grab the single use auth token for this form
-            authenticity_token = soup.find("input", {"name": "authenticity_token"})[
-                "value"
-            ]
-            # and the form action itself
-            form_action = soup.find("input", {"name": "authenticity_token"}).parent[
-                "action"
-            ]
             payload_login = {
-                "authenticity_token": authenticity_token,
                 "user[email]": self.enlighten_user,
                 "user[password]": self.enlighten_pass,
             }
-            resp = await client.post(
-                ENLIGHTEN_AUTH_FORM_URL + form_action, data=payload_login, timeout=10
-            )
+            resp = await client.post(ENLIGHTEN_AUTH_URL, data=payload_login, timeout=30)
             if resp.status_code >= 400:
-                raise Exception("Could not Authenticate via Enlighten auth form")
+                raise RuntimeError("Could not Authenticate via Enlighten")
 
-            # now that we're in a logged in session, we can request the 6 month owner token via enlighten
-            resp = await client.get(
-                ENLIGHTEN_TOKEN_URL.format(self.enlighten_serial_num)
-            )
-            resp_json = resp.json()
-            if "token" not in resp_json.keys():
-                msg = resp_json.get(
-                    "message", "Unknown error returned from enlighten: " + resp.text
-                )
-                raise Exception("Could not get 6 month token: " + msg)
-            return resp_json
-
-    async def _getEnphaseToken(  # pylint: disable=invalid-name
-        self,
-    ):
-        payload_login = {
-            "username": self.enlighten_user,
-            "password": self.enlighten_pass,
-        }
-
-        if self.use_enlighten_owner_token:
-            token_json = await self._fetch_owner_token_json()
-
-            self._token = token_json["token"]
-            time_left_days = (token_json["expires_at"] - time.time()) / (24 * 3600)
-            _LOGGER.debug("Commissioned Token valid for %s days", time_left_days)
-
-        elif self.commissioned == "True" or self.commissioned == "Commissioned":
-            # Login to website and store cookie
-            resp = await self._async_post(LOGIN_URL, data=payload_login)
+            # now that we're in a logged in session, we can request the 1 year owner token to access envoy
+            login_data = resp.json()
             payload_token = {
-                "Site": self.enlighten_site_id,
-                "serialNum": self.enlighten_serial_num,
+                "session_id": login_data["session_id"],
+                "serial_num": self.enlighten_serial_num,
+                "username": self.enlighten_user,
             }
-            response = await self._async_post(
-                TOKEN_URL, data=payload_token, cookies=resp.cookies
+            resp = await client.post(
+                ENLIGHTEN_TOKEN_URL, json=payload_token, timeout=30
             )
+            if resp.status_code != 200:
+                raise RuntimeError("Could not get enlighten token")
+            return resp.text
 
-            parsed_html = BeautifulSoup(response.text, features="html.parser")
-            self._token = parsed_html.body.find(  # pylint: disable=invalid-name, unused-variable, redefined-outer-name
-                "textarea"
-            ).text
-            _LOGGER.debug("Commissioned Token: %s", self._token)
+    async def _getEnphaseToken(self):
+        self._token = await self._fetch_owner_token_json()
+        _LOGGER.debug("Obtained Token")
 
-        else:
-            # Login to website and store cookie
-            resp = await self._async_post(LOGIN_URL, data=payload_login)
-            payload_token = {"uncommissioned": "true", "Site": ""}
-            response = await self._async_post(
-                TOKEN_URL, data=payload_token, cookies=resp.cookies
-            )
-            soup = BeautifulSoup(response.text, features="html.parser")
-            self._token = soup.find("textarea").contents[
-                0
-            ]  # pylint: disable=invalid-name
-            _LOGGER.debug("Uncommissioned Token: %s", self._token)
+        if self._is_enphase_token_expired(self._token):
+            raise RuntimeError("Just received token already expired")
 
         await self._refresh_token_cookies()
 
     async def _refresh_token_cookies(self):
         """Refresh the client's cookie with the token (if valid).
-
         :returns True if cookie refreshed, False if it couldn't be.
         """
         # Create HTTP Header
         self._authorization_header = {"Authorization": "Bearer " + self._token}
 
         # Fetch the Enphase Token status from the local Envoy
-        token_validation_html = await self._async_fetch_with_retry(
+        token_validation = await self._async_post(
             ENDPOINT_URL_CHECK_JWT.format(self.host)
         )
 
-        # Parse the HTML return from Envoy and check the text
-        soup = BeautifulSoup(token_validation_html.text, features="html.parser")
-        token_validation = soup.find("h2").contents[0]
-        if self._is_enphase_token_valid(token_validation):
+        if token_validation.status_code == 200:
             # set the cookies for future clients
-            self._cookies = token_validation_html.cookies
+            self._cookies = token_validation.cookies
             return True
 
         # token not valid if we get here
@@ -418,17 +369,8 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         inverters_url = ENDPOINT_URL_PRODUCTION_INVERTERS.format(
             self.https_flag, self.host
         )
-        inverters_auth = httpx.DigestAuth(self.username, self.password)
+        response = await self._async_fetch_with_retry(inverters_url)
 
-        response = await self._async_fetch_with_retry(
-            inverters_url, auth=inverters_auth
-        )
-        _LOGGER.debug(
-            "Fetched from %s: %s: %s",
-            inverters_url,
-            response,
-            response.text,
-        )
         if response.status_code == 401:
             response.raise_for_status()
         self.endpoint_production_inverters = response
@@ -470,6 +412,11 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             if not self.isMeteringEnabled:
                 await self._update_from_p_endpoint()
             self.endpoint_type = ENVOY_MODEL_S
+            _LOGGER.debug(
+                "Model detected as ENVOY-S: %s and metering: %s",
+                self.endpoint_type,
+                self.isMeteringEnabled,
+            )
             return
 
         with contextlib.suppress(httpx.HTTPError):
@@ -480,6 +427,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             and self.endpoint_production_v1_results.status_code == 200
         ):
             self.endpoint_type = ENVOY_MODEL_C  # Envoy-C, production only
+            _LOGGER.debug("Model detected as ENVOY-S standard: %s ", self.endpoint_type)
             return
 
         with contextlib.suppress(httpx.HTTPError):
@@ -490,6 +438,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             and self.endpoint_production_results.status_code == 200
         ):
             self.endpoint_type = ENVOY_MODEL_LEGACY  # older Envoy-C
+            _LOGGER.debug("Model detected as legacy ENVOY: %s", self.endpoint_type)
             return
 
         raise RuntimeError(
