@@ -22,6 +22,7 @@ from .const import (
     NAME,
     PLATFORMS,
     SENSORS,
+    PHASE_SENSORS,
 )
 from .envoy_reader import EnvoyReader
 
@@ -90,6 +91,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         envoy_reader, description.key
                     )()
 
+            for description in PHASE_SENSORS:
+                if description.key.startswith("production_"):
+                    data[description.key] = await envoy_reader.production_phase(
+                        description.key
+                    )
+                elif description.key.startswith("consumption_"):
+                    data[description.key] = await envoy_reader.consumption_phase(
+                        description.key
+                    )
+                elif description.key.startswith("daily_production_"):
+                    data[description.key] = await envoy_reader.daily_production_phase(
+                        description.key
+                    )
+                elif description.key.startswith("daily_consumption_"):
+                    data[description.key] = await envoy_reader.daily_consumption_phase(
+                        description.key
+                    )
+                elif description.key.startswith("lifetime_production_"):
+                    data[
+                        description.key
+                    ] = await envoy_reader.lifetime_production_phase(description.key)
+                elif description.key.startswith("lifetime_consumption_"):
+                    data[
+                        description.key
+                    ] = await envoy_reader.lifetime_consumption_phase(description.key)
+                    
+                    
             data["grid_status"] = await envoy_reader.grid_status()
 
             _LOGGER.debug("Retrieved data from API: %s", data)
