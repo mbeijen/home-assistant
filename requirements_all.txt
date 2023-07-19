@@ -733,7 +733,7 @@ enturclient==0.2.4
 env-canada==0.5.35
 
 # homeassistant.components.enphase_envoy
-envoy-reader==0.20.1
+envoy_utils==0.0.1
 
 # homeassistant.components.season
 ephem==4.1.2
@@ -999,6 +999,9 @@ horimote==0.4.1
 
 # homeassistant.components.remember_the_milk
 httplib2==0.20.4
+
+# homeassistant.components.enphase_envoy
+httpx==0.24.1
 
 # homeassistant.components.huawei_lte
 huawei-lte-api==1.6.11
@@ -1754,6 +1757,9 @@ pyitachip2ir==0.0.7
 
 # homeassistant.components.jvc_projector
 pyjvcprojector==1.0.6
+
+# homeassistant.components.enphase_envoy
+pyjwt==2.7.0
 
 # homeassistant.components.kaleidescape
 pykaleidescape==1.0.1
@@ -2696,6 +2702,7 @@ xknx==2.11.1
 xknxproject==3.2.0
 
 # homeassistant.components.bluesound
+# homeassistant.components.enphase_envoy
 # homeassistant.components.fritz
 # homeassistant.components.rest
 # homeassistant.components.startca

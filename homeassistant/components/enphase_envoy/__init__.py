@@ -11,18 +11,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     CONF_SERIAL,
     CONF_USE_ENLIGHTEN,
     COORDINATOR,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     NAME,
+    PHASE_SENSORS,
     PLATFORMS,
     SENSORS,
-    PHASE_SENSORS,
 )
 from .envoy_reader import EnvoyReader
 
@@ -37,10 +38,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Enphase Envoy from a config entry."""
 
     config = entry.data
+    options = entry.options
     name = config[CONF_NAME]
 
     # Setup persistent storage, to save tokens between home assistant restarts
-    store = Store(hass, STORAGE_VERSION, ".".join([STORAGE_KEY, entry.entry_id]))
+    store: Store = Store(
+        hass, STORAGE_VERSION, ".".join([STORAGE_KEY, entry.entry_id])
+    )  # class variable
 
     envoy_reader = EnvoyReader(
         config[CONF_HOST],
@@ -55,7 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         https_flag="s" if config.get(CONF_USE_ENLIGHTEN, False) else "",
         store=store,
     )
-    await envoy_reader._sync_store()
+    await envoy_reader.sync_store()
 
     async def async_update_data():
         """Fetch data from API endpoint."""
@@ -77,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 elif description.key == "batteries":
                     battery_data = await envoy_reader.battery_storage()
                     if isinstance(battery_data, list) and len(battery_data) > 0:
-                        battery_dict = {}
+                        battery_dict: dict[str, float] = {}
                         for item in battery_data:
                             battery_dict[item["serial_num"]] = item
 
@@ -116,13 +120,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     data[
                         description.key
                     ] = await envoy_reader.lifetime_consumption_phase(description.key)
-                    
-                    
+
             data["grid_status"] = await envoy_reader.grid_status()
 
             _LOGGER.debug("Retrieved data from API: %s", data)
 
-            await envoy_reader._sync_store()
+            await envoy_reader.sync_store()
             return data
 
     coordinator = DataUpdateCoordinator(
@@ -130,7 +133,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER,
         name=f"envoy {name}",
         update_method=async_update_data,
-        update_interval=SCAN_INTERVAL,
+        update_interval=timedelta(
+            seconds=options.get("scan_interval", DEFAULT_SCAN_INTERVAL)
+        ),
     )
 
     try:
