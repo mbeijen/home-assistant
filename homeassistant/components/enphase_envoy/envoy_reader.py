@@ -269,7 +269,8 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             }
             resp = await client.post(ENLIGHTEN_AUTH_URL, data=payload_login, timeout=30)
             if resp.status_code >= 400:
-                raise RuntimeError("Could not Authenticate via Enlighten")
+                _LOGGER.warning("Login to Enphase site failed %s", resp)
+                resp.raise_for_status()
 
             # now that we're in a logged in session, we can request the 1 year owner token to access envoy
             login_data = resp.json()
@@ -282,12 +283,13 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
                 ENLIGHTEN_TOKEN_URL, json=payload_token, timeout=30
             )
             if resp.status_code != 200:
-                raise RuntimeError("Could not get enlighten token")
+                _LOGGER.warning("Getting token from to Enphase site failed %s", resp)
+                resp.raise_for_status()
             return resp.text
 
     async def _getEnphaseToken(self):
         self._token = await self._fetch_owner_token_json()
-        _LOGGER.debug("Obtained Token")
+        _LOGGER.debug("Obtained Token from Enphase site")
 
         if self._is_enphase_token_expired(self._token):
             raise RuntimeError("Just received token already expired")
