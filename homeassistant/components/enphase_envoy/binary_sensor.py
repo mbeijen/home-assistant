@@ -1,3 +1,5 @@
+"""Support for Enphase Envoy solar energy monitor."""
+
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -5,7 +7,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import COORDINATOR, DOMAIN, GRID_STATUS_BINARY_SENSOR, ICON, NAME
+from .const import BINARY_SENSORS, COORDINATOR, DOMAIN, ICON, NAME
 
 
 async def async_setup_entry(
@@ -13,27 +15,32 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    """Set up envoy binary sensor platform."""
     data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = data[COORDINATOR]
     name = data[NAME]
 
     entities = []
-    if coordinator.data.get("grid_status") is not None:
-        entities.append(
-            EnvoyGridStatusEntity(
-                GRID_STATUS_BINARY_SENSOR,
-                GRID_STATUS_BINARY_SENSOR.name,
-                name,
-                config_entry.unique_id,
-                None,
-                coordinator,
-            )
-        )
+    for sensor_description in BINARY_SENSORS:
+        if sensor_description.key == "grid_status":
+            if coordinator.data.get("grid_status") is not None:
+                entities.append(
+                    EnvoyGridStatusEntity(
+                        sensor_description,
+                        sensor_description.name,
+                        name,
+                        config_entry.unique_id,
+                        None,
+                        coordinator,
+                    )
+                )
 
     async_add_entities(entities)
 
 
 class EnvoyGridStatusEntity(CoordinatorEntity, BinarySensorEntity):
+    """Envoy Grid Status entity."""
+
     def __init__(
         self,
         description,
@@ -42,7 +49,8 @@ class EnvoyGridStatusEntity(CoordinatorEntity, BinarySensorEntity):
         device_serial_number,
         serial_number,
         coordinator,
-    ):
+    ) -> None:
+        """Envoy Grid Status entity."""
         self.entity_description = description
         self._name = name
         self._serial_number = serial_number
@@ -69,7 +77,7 @@ class EnvoyGridStatusEntity(CoordinatorEntity, BinarySensorEntity):
             return f"{self._device_serial_number}_{self.entity_description.key}"
 
     @property
-    def device_info(self) -> DeviceInfo or None:
+    def device_info(self):
         """Return the device_info of the device."""
         if not self._device_serial_number:
             return None
