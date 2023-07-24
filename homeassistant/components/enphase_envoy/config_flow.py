@@ -9,11 +9,12 @@ import httpx
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components import zeroconf
+from homeassistant.components import network, zeroconf
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util.network import is_ipv4_address
 
 from .const import CONF_SERIAL, CONF_USE_ENLIGHTEN, DEFAULT_SCAN_INTERVAL, DOMAIN
 from .envoy_reader import EnvoyReader
@@ -46,6 +47,15 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> EnvoyRead
         raise CannotConnect from err
 
     return envoy_reader
+
+
+async def ipv4asdefault(hass: HomeAssistant):
+    """Return if HA default network adapter runs ipv4 or not."""
+    adapters = await network.async_get_adapters(hass)
+    for adapter in adapters:
+        if adapter["default"]:
+            return adapter["ipv4"] is not None
+    return False
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -104,6 +114,18 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         entry.unique_id,
                     )
                     return self.async_abort(reason="pref_disable_new_entities")
+
+        ipv4_default = await ipv4asdefault(self.hass)
+        # don't switch to non ipv4 address if default interface is on ipv4
+        if ipv4_default and not is_ipv4_address(discovery_info.host):
+            return self.async_abort(
+                reason="not_ipv4_address, using ipv4 network interface"
+            )
+        # don't switch to ipv4 address if default interface is not on ipv4
+        if not ipv4_default and is_ipv4_address(discovery_info.host):
+            return self.async_abort(
+                reason="ipv4 address, not using ipv4 network interface"
+            )
 
         # autodiscovery is updating the ip address of an existing envoy with matching serial to new detected ip address
         self.ip_address = discovery_info.host
