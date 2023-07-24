@@ -370,6 +370,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         if not self.endpoint_type:
             await self.detect_model()
         else:
+            _LOGGER.debug("Using Model: %s ", self.endpoint_type)
             await self._update()
 
         if not self.get_inverters or not getInverters:
@@ -447,6 +448,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             and self.endpoint_production_results.status_code == 200
         ):
             self.endpoint_type = ENVOY_MODEL_LEGACY  # older Envoy-C
+            self.get_inverters = False  # don't get inverters for this model
             _LOGGER.debug("Model detected as legacy ENVOY: %s", self.endpoint_type)
             return
 
@@ -565,7 +567,10 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         phase_map = {"consumption_l1": 0, "consumption_l2": 1, "consumption_l3": 2}
 
         """Only return data if Envoy supports Consumption"""
-        if self.endpoint_type in ENVOY_MODEL_C:
+        if (
+            self.endpoint_type in ENVOY_MODEL_C
+            or self.endpoint_type in ENVOY_MODEL_LEGACY
+        ):
             return None
 
         raw_json = self.endpoint_production_json_results.json()
@@ -647,7 +652,10 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         }
 
         """Only return data if Envoy supports Consumption"""
-        if self.endpoint_type in ENVOY_MODEL_C:
+        if (
+            self.endpoint_type in ENVOY_MODEL_C
+            or self.endpoint_type in ENVOY_MODEL_LEGACY
+        ):
             return None
 
         raw_json = self.endpoint_production_json_results.json()
@@ -772,7 +780,10 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         }
 
         """Only return data if Envoy supports Consumption"""
-        if self.endpoint_type in ENVOY_MODEL_C:
+        if (
+            self.endpoint_type in ENVOY_MODEL_C
+            or self.endpoint_type in ENVOY_MODEL_LEGACY
+        ):
             return None
 
         raw_json = self.endpoint_production_json_results.json()
