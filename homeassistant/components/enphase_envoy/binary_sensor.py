@@ -1,5 +1,6 @@
 """Support for Enphase Envoy solar energy monitor."""
 
+
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -77,10 +78,10 @@ class EnvoyGridStatusEntity(CoordinatorEntity, BinarySensorEntity):
             return f"{self._device_serial_number}_{self.entity_description.key}"
 
     @property
-    def device_info(self):
+    def device_info(self) -> DeviceInfo:
         """Return the device_info of the device."""
         if not self._device_serial_number:
-            return None
+            return None  # type: ignore[return-value]
         return DeviceInfo(
             identifiers={(DOMAIN, str(self._device_serial_number))},
             manufacturer="Enphase",

@@ -103,7 +103,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         serial = discovery_info.properties["serialnum"]
         await self.async_set_unique_id(serial)
 
-        # 75 If system option to enable newly discoverd entries is off (by user) and uniqueid is this serial then skip updating ip
+        # If system option to enable newly discoverd entries is off (by user) and uniqueid is this serial then skip updating ip
         for entry in self._async_current_entries(include_ignore=False):
             if entry.pref_disable_new_entities and entry.unique_id is not None:
                 if entry.unique_id == serial:
