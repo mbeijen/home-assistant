@@ -889,14 +889,13 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
     async def envoy_info(self):
         """Return information reported by Envoy info.xml."""
         device_data = {}
-
         if self.endpoint_info_results:
             try:
                 data = xmltodict.parse(self.endpoint_info_results.text)
                 device_data["software"] = data["envoy_info"]["device"]["software"]
                 device_data["pn"] = data["envoy_info"]["device"]["pn"]
                 device_data["metered"] = data["envoy_info"]["device"]["imeter"]
-            except (KeyError, IndexError, TypeError, AttributeError):
+            except Exception:  # pylint: disable=broad-except
                 pass
 
         return device_data
