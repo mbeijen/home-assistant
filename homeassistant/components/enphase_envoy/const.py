@@ -25,6 +25,10 @@ DEFAULT_SCAN_INTERVAL = 60  # default in seconds
 CONF_SERIAL = "serial"
 CONF_USE_ENLIGHTEN = "use_enlighten"
 
+ZEROCONF_NO_IPV4_ON_IPV4 = "not_ipv4_address, using ipv4 network interface"
+ZEROCONF_IPV4_ON_NONEIPV4 = "ipv4 address, not using ipv4 network interface"
+ZEROCONF_ALREADY_CONFIGURED = "already_configured"
+
 SENSORS = (
     SensorEntityDescription(
         key="production",

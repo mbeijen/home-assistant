@@ -16,7 +16,15 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.network import is_ipv4_address
 
-from .const import CONF_SERIAL, CONF_USE_ENLIGHTEN, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import (
+    CONF_SERIAL,
+    CONF_USE_ENLIGHTEN,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    ZEROCONF_ALREADY_CONFIGURED,
+    ZEROCONF_IPV4_ON_NONEIPV4,
+    ZEROCONF_NO_IPV4_ON_IPV4,
+)
 from .envoy_reader import EnvoyReader
 
 _LOGGER = logging.getLogger(__name__)
@@ -118,14 +126,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         ipv4_default = await ipv4asdefault(self.hass)
         # don't switch to non ipv4 address if default interface is on ipv4
         if ipv4_default and not is_ipv4_address(discovery_info.host):
-            return self.async_abort(
-                reason="not_ipv4_address, using ipv4 network interface"
-            )
+            return self.async_abort(reason=ZEROCONF_NO_IPV4_ON_IPV4)
         # don't switch to ipv4 address if default interface is not on ipv4
         if not ipv4_default and is_ipv4_address(discovery_info.host):
-            return self.async_abort(
-                reason="ipv4 address, not using ipv4 network interface"
-            )
+            return self.async_abort(reason=ZEROCONF_IPV4_ON_NONEIPV4)
 
         # autodiscovery is updating the ip address of an existing envoy with matching serial to new detected ip address
         self.ip_address = discovery_info.host
@@ -143,7 +147,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.hass.async_create_task(
                     self.hass.config_entries.async_reload(entry.entry_id)
                 )
-                return self.async_abort(reason="already_configured")
+                return self.async_abort(reason=ZEROCONF_ALREADY_CONFIGURED)
 
         return await self.async_step_user()
 
@@ -181,7 +185,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 not self._reauth_entry
                 and user_input[CONF_HOST] in self._async_current_hosts()
             ):
-                return self.async_abort(reason="already_configured")
+                return self.async_abort(reason=ZEROCONF_ALREADY_CONFIGURED)
             try:
                 envoy_reader = await validate_input(self.hass, user_input)
             except CannotConnect:
