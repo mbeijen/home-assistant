@@ -9,6 +9,7 @@ import time
 from envoy_utils.envoy_utils import EnvoyUtils
 import httpx
 import jwt
+import xmltodict
 
 from homeassistant.util.network import is_ipv6_address
 
@@ -32,6 +33,7 @@ ENDPOINT_URL_PRODUCTION = "http{}://{}/production"
 ENDPOINT_URL_CHECK_JWT = "https://{}/auth/check_jwt"
 ENDPOINT_URL_ENSEMBLE_INVENTORY = "http{}://{}/ivp/ensemble/inventory"
 ENDPOINT_URL_HOME_JSON = "http{}://{}/home.json"
+ENDPOINT_URL_INFO_XML = "http{}://{}/info.xml"
 
 # pylint: disable=pointless-string-statement
 
@@ -99,6 +101,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         use_enlighten_owner_token=False,
         token_refresh_buffer_seconds=0,
         store=None,
+        info_refresh_buffer_seconds=3600,
     ) -> None:
         """Init the EnvoyReader."""
         self.host = host.lower()
@@ -117,6 +120,7 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         self.endpoint_production_results = None
         self.endpoint_ensemble_json_results = None
         self.endpoint_home_json_results = None
+        self.endpoint_info_results = None
         self.isMeteringEnabled = False  # pylint: disable=invalid-name
         self._async_client = async_client
         self._authorization_header = None
@@ -129,6 +133,8 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         self.https_flag = https_flag
         self.use_enlighten_owner_token = use_enlighten_owner_token
         self.token_refresh_buffer_seconds = token_refresh_buffer_seconds
+        self.info_refresh_buffer_seconds = info_refresh_buffer_seconds
+        self.info_next_refresh_time = datetime.datetime.now()
 
         self._store = store
         self._store_data: dict[str, str] = {}
@@ -182,18 +188,39 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
             await self._update_endpoint(
                 "endpoint_home_json_results", ENDPOINT_URL_HOME_JSON
             )
+        await self._update_info_endpoint()
 
     async def _update_from_p_endpoint(self):
         """Update from P endpoint."""
         await self._update_endpoint(
             "endpoint_production_v1_results", ENDPOINT_URL_PRODUCTION_V1
         )
+        await self._update_info_endpoint()
 
     async def _update_from_p0_endpoint(self):
         """Update from P0 endpoint."""
         await self._update_endpoint(
             "endpoint_production_results", ENDPOINT_URL_PRODUCTION
         )
+
+    async def _update_info_endpoint(self):
+        """Update from info.xml endpoint if next time expried."""
+        if self.info_next_refresh_time <= datetime.datetime.now():
+            await self._update_endpoint("endpoint_info_results", ENDPOINT_URL_INFO_XML)
+            self.info_next_refresh_time = datetime.datetime.now() + datetime.timedelta(
+                seconds=self.info_refresh_buffer_seconds
+            )
+            _LOGGER.debug(
+                "Info endpoint updated, set next update time: %s using interval: %s",
+                self.info_next_refresh_time,
+                self.info_refresh_buffer_seconds,
+            )
+        else:
+            _LOGGER.debug(
+                "Info endpoint next update time is: %s using interval: %s",
+                self.info_next_refresh_time,
+                self.info_refresh_buffer_seconds,
+            )
 
     async def _update_endpoint(self, attr, url):
         """Update a property from an endpoint."""
@@ -206,11 +233,15 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
     async def _async_fetch_with_retry(self, url, **kwargs):
         """Retry 3 times to fetch the url if there is a transport error."""
         for attempt in range(3):
+            header = " <Blank Authorization Header> "
+            if self._authorization_header:
+                header = " <Authorization header with Token hidden> "
+
             _LOGGER.debug(
-                "HTTP GET Attempt #%s: %s: Header:%s",
+                "HTTP GET Attempt #%s: %s: Header:%s ",
                 attempt + 1,
                 url,
-                self._authorization_header,
+                header,
             )
             try:
                 async with self.async_client as client:
@@ -364,13 +395,19 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
 
         # Check if the Secure flag is set
         if self.https_flag == "s":
-            _LOGGER.debug("Checking Token value: %s", self._token)
+            _LOGGER.debug(
+                "Checking Token value: %s (Only first 10 characters shown)",
+                self._token[1:10],
+            )
             # Check if a token has already been retrieved
             if self._token == "":
                 _LOGGER.debug("Found empty token: %s", self._token)
                 await self._getEnphaseToken()
             else:
-                _LOGGER.debug("Token is populated: %s", self._token)
+                _LOGGER.debug(
+                    "Token is populated: %s (Only first 10 characters shown)",
+                    self._token[1:10],
+                )
                 if self._is_enphase_token_expired(self._token):
                     _LOGGER.debug("Found Expired token - Retrieving new token")
                     await self._getEnphaseToken()
@@ -848,3 +885,18 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
                     return home_json["enpower"]["grid_status"]
         self.has_grid_status = False
         return None
+
+    async def envoy_info(self):
+        """Return information reported by Envoy info.xml."""
+        device_data = {}
+
+        if self.endpoint_info_results:
+            try:
+                data = xmltodict.parse(self.endpoint_info_results.text)
+                device_data["software"] = data["envoy_info"]["device"]["software"]
+                device_data["pn"] = data["envoy_info"]["device"]["pn"]
+                device_data["metered"] = data["envoy_info"]["device"]["imeter"]
+            except (KeyError, IndexError, TypeError, AttributeError):
+                pass
+
+        return device_data
