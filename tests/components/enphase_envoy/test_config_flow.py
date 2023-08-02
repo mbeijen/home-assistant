@@ -1,12 +1,17 @@
 """Test the Enphase Envoy config flow."""
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from homeassistant import config_entries
 from homeassistant.components import zeroconf
-from homeassistant.components.enphase_envoy.const import DOMAIN
+from homeassistant.components.enphase_envoy.const import (
+    DOMAIN,
+    ZEROCONF_ALREADY_CONFIGURED,
+    ZEROCONF_IPV4_ON_NONEIPV4,
+    ZEROCONF_NO_IPV4_ON_IPV4,
+)
 from homeassistant.core import HomeAssistant
 
 
@@ -24,6 +29,8 @@ async def test_form(hass: HomeAssistant, config, setup_enphase_envoy) -> None:
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "1234",
+            "use_enlighten": True,
         },
     )
     assert result2["type"] == "create_entry"
@@ -33,6 +40,8 @@ async def test_form(hass: HomeAssistant, config, setup_enphase_envoy) -> None:
         "name": "Envoy 1234",
         "username": "test-username",
         "password": "test-password",
+        "serial": "1234",
+        "use_enlighten": True,
     }
 
 
@@ -53,6 +62,8 @@ async def test_user_no_serial_number(
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "",
+            "use_enlighten": True,
         },
     )
     assert result2["type"] == "create_entry"
@@ -62,6 +73,8 @@ async def test_user_no_serial_number(
         "name": "Envoy",
         "username": "test-username",
         "password": "test-password",
+        "serial": "",
+        "use_enlighten": True,
     }
 
 
@@ -91,6 +104,7 @@ async def test_user_fetching_serial_fails(
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "",
         },
     )
     assert result2["type"] == "create_entry"
@@ -100,6 +114,7 @@ async def test_user_fetching_serial_fails(
         "name": "Envoy",
         "username": "test-username",
         "password": "test-password",
+        "serial": "",
     }
 
 
@@ -124,6 +139,7 @@ async def test_form_invalid_auth(hass: HomeAssistant, setup_enphase_envoy) -> No
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "",
         },
     )
     assert result2["type"] == "form"
@@ -144,6 +160,7 @@ async def test_form_cannot_connect(hass: HomeAssistant, setup_enphase_envoy) -> 
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "",
         },
     )
     assert result2["type"] == "form"
@@ -162,6 +179,7 @@ async def test_form_unknown_error(hass: HomeAssistant, setup_enphase_envoy) -> N
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "",
         },
     )
     assert result2["type"] == "form"
@@ -192,6 +210,7 @@ async def test_zeroconf(hass: HomeAssistant, setup_enphase_envoy) -> None:
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "1234",
         },
     )
     assert result2["type"] == "create_entry"
@@ -202,6 +221,7 @@ async def test_zeroconf(hass: HomeAssistant, setup_enphase_envoy) -> None:
         "name": "Envoy 1234",
         "username": "test-username",
         "password": "test-password",
+        "serial": "1234",
     }
 
 
@@ -209,68 +229,135 @@ async def test_form_host_already_exists(
     hass: HomeAssistant, config_entry, setup_enphase_envoy
 ) -> None:
     """Test host already exists."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
-    assert result["type"] == "form"
-    assert result["errors"] == {}
+    with patch(
+        "homeassistant.components.enphase_envoy.config_flow.ipv4asdefault",
+        return_value=False,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        assert result["type"] == "form"
+        assert result["errors"] == {}
 
-    result2 = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            "host": "1.1.1.1",
-            "username": "test-username",
-            "password": "test-password",
-        },
-    )
-    assert result2["type"] == "abort"
-    assert result2["reason"] == "already_configured"
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                "host": "1.1.1.1",
+                "username": "test-username",
+                "password": "test-password",
+                "serial": "1234",
+            },
+        )
+        assert result2["type"] == "abort"
+        assert result2["reason"] == ZEROCONF_ALREADY_CONFIGURED
 
 
-async def test_zeroconf_serial_already_exists(
+async def test_zeroconf_serial_already_exists_on_ipv4(
     hass: HomeAssistant, config_entry, setup_enphase_envoy
 ) -> None:
     """Test serial number already exists from zeroconf."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": config_entries.SOURCE_ZEROCONF},
-        data=zeroconf.ZeroconfServiceInfo(
-            host="4.4.4.4",
-            addresses=["4.4.4.4"],
-            hostname="mock_hostname",
-            name="mock_name",
-            port=None,
-            properties={"serialnum": "1234"},
-            type="mock_type",
-        ),
-    )
-    assert result["type"] == "abort"
-    assert result["reason"] == "already_configured"
+    with patch(
+        "homeassistant.components.enphase_envoy.config_flow.ipv4asdefault",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=zeroconf.ZeroconfServiceInfo(
+                host="4.4.4.4",
+                addresses=["4.4.4.4"],
+                hostname="mock_hostname",
+                name="mock_name",
+                port=None,
+                properties={"serialnum": "1234"},
+                type="mock_type",
+            ),
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == ZEROCONF_ALREADY_CONFIGURED
 
-    assert config_entry.data["host"] == "4.4.4.4"
+        assert config_entry.data["host"] == "4.4.4.4"
 
 
-async def test_zeroconf_serial_already_exists_ignores_ipv6(
+async def test_zeroconf_serial_already_exists_on_ipv6(
     hass: HomeAssistant, config_entry, setup_enphase_envoy
 ) -> None:
-    """Test serial number already exists from zeroconf but the discovery is ipv6."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": config_entries.SOURCE_ZEROCONF},
-        data=zeroconf.ZeroconfServiceInfo(
-            host="fd00::b27c:63bb:cc85:4ea0",
-            addresses=["fd00::b27c:63bb:cc85:4ea0"],
-            hostname="mock_hostname",
-            name="mock_name",
-            port=None,
-            properties={"serialnum": "1234"},
-            type="mock_type",
-        ),
-    )
-    assert result["type"] == "abort"
-    assert result["reason"] == "not_ipv4_address"
+    """Test serial number already exists from zeroconf."""
+    with patch(
+        "homeassistant.components.enphase_envoy.config_flow.ipv4asdefault",
+        return_value=False,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=zeroconf.ZeroconfServiceInfo(
+                host="fd00::b27c:63bb:cc85:4ea0",
+                addresses=["fd00::b27c:63bb:cc85:4ea0"],
+                hostname="mock_hostname",
+                name="mock_name",
+                port=None,
+                properties={"serialnum": "1234"},
+                type="mock_type",
+            ),
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == ZEROCONF_ALREADY_CONFIGURED
 
-    assert config_entry.data["host"] == "1.1.1.1"
+        assert config_entry.data["host"] == "fd00::b27c:63bb:cc85:4ea0"
+
+
+async def test_zeroconf_serial_already_exists_as_ipv4_ignores_ipv6(
+    hass: HomeAssistant, config_entry, setup_enphase_envoy
+) -> None:
+    """Test serial number already exists as ipv4 from zeroconf but the discovery is ipv6."""
+    with patch(
+        "homeassistant.components.enphase_envoy.config_flow.ipv4asdefault",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=zeroconf.ZeroconfServiceInfo(
+                host="fd00::b27c:63bb:cc85:4ea0",
+                addresses=["2.2.2.2"],
+                hostname="mock_hostname",
+                name="mock_name",
+                port=None,
+                properties={"serialnum": "1234"},
+                type="mock_type",
+            ),
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == ZEROCONF_NO_IPV4_ON_IPV4
+
+        assert config_entry.data["host"] == "1.1.1.1"
+
+
+async def test_zeroconf_serial_already_exists_as_ipv6_ignores_ipv4(
+    hass: HomeAssistant, config_entry, setup_enphase_envoy
+) -> None:
+    """Test serial number already exists as ipv6 from zeroconf but the discovery is ipv4."""
+    with patch(
+        "homeassistant.components.enphase_envoy.config_flow.ipv4asdefault",
+        return_value=False,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=zeroconf.ZeroconfServiceInfo(
+                host="2.2.2.2",
+                addresses=["fd00::b27c:63bb:cc85:4ea0"],
+                hostname="mock_hostname",
+                name="mock_name",
+                port=None,
+                properties={"serialnum": "1234"},
+                type="mock_type",
+            ),
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == ZEROCONF_IPV4_ON_NONEIPV4
+
+        assert config_entry.data["host"] == "1.1.1.1"
 
 
 @pytest.mark.parametrize("serial_number", [None])
@@ -278,24 +365,28 @@ async def test_zeroconf_host_already_exists(
     hass: HomeAssistant, config_entry, setup_enphase_envoy
 ) -> None:
     """Test hosts already exists from zeroconf."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": config_entries.SOURCE_ZEROCONF},
-        data=zeroconf.ZeroconfServiceInfo(
-            host="1.1.1.1",
-            addresses=["1.1.1.1"],
-            hostname="mock_hostname",
-            name="mock_name",
-            port=None,
-            properties={"serialnum": "1234"},
-            type="mock_type",
-        ),
-    )
-    assert result["type"] == "abort"
-    assert result["reason"] == "already_configured"
+    with patch(
+        "homeassistant.components.enphase_envoy.config_flow.ipv4asdefault",
+        return_value=True,
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_ZEROCONF},
+            data=zeroconf.ZeroconfServiceInfo(
+                host="1.1.1.1",
+                addresses=["1.1.1.1"],
+                hostname="mock_hostname",
+                name="mock_name",
+                port=None,
+                properties={"serialnum": "1234"},
+                type="mock_type",
+            ),
+        )
+        assert result["type"] == "abort"
+        assert result["reason"] == ZEROCONF_ALREADY_CONFIGURED
 
-    assert config_entry.unique_id == "1234"
-    assert config_entry.title == "Envoy 1234"
+        assert config_entry.unique_id == "1234"
+        assert config_entry.title == "Envoy 1234"
 
 
 async def test_reauth(hass: HomeAssistant, config_entry, setup_enphase_envoy) -> None:
@@ -314,6 +405,7 @@ async def test_reauth(hass: HomeAssistant, config_entry, setup_enphase_envoy) ->
             "host": "1.1.1.1",
             "username": "test-username",
             "password": "test-password",
+            "serial": "1234",
         },
     )
     assert result2["type"] == "abort"

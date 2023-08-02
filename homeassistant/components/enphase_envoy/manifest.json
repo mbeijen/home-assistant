@@ -1,9 +1,9 @@
 {
   "domain": "enphase_envoy",
   "name": "Enphase Envoy",
+  "after_dependencies": ["zeroconf", "network"],
   "codeowners": ["@gtdiehl", "@catsmanac"],
   "config_flow": true,
-  "dependencies": ["zeroconf"],
   "documentation": "https://www.home-assistant.io/integrations/enphase_envoy",
   "integration_type": "device",
   "iot_class": "local_polling",

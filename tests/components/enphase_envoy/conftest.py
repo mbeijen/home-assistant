@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from homeassistant.components.enphase_envoy import DOMAIN
+from homeassistant.components.enphase_envoy import (
+    CONF_SERIAL,
+    CONF_USE_ENLIGHTEN,
+    DOMAIN,
+)
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
@@ -33,6 +37,8 @@ def config_fixture():
         CONF_NAME: "Envoy 1234",
         CONF_USERNAME: "test-username",
         CONF_PASSWORD: "test-password",
+        CONF_SERIAL: "1234",
+        CONF_USE_ENLIGHTEN: True,
     }
 
 
@@ -88,7 +94,7 @@ def mock_inverters_production_fixture(inverters_production_data):
 
 
 @pytest.fixture(name="setup_enphase_envoy")
-async def setup_enphase_envoy_fixture(hass, config, mock_envoy_reader):
+async def setup_enphase_envoy_fixture(hass: HomeAssistant, config, mock_envoy_reader):
     """Define a fixture to set up Enphase Envoy."""
     with patch(
         "homeassistant.components.enphase_envoy.config_flow.EnvoyReader",
