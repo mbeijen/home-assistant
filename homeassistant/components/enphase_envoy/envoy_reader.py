@@ -365,18 +365,22 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         return False
 
     def _is_enphase_token_expired(self, token):
-        decode = jwt.decode(
-            token, options={"verify_signature": False}, algorithms="ES256"
-        )
-        exp_epoch = decode["exp"]
-        # allow a buffer so we can try and grab it sooner
-        exp_epoch -= self.token_refresh_buffer_seconds
-        exp_time = datetime.datetime.fromtimestamp(exp_epoch)
+        exp_time = self._enphase_token_expiration_date(token)
         if datetime.datetime.now() < exp_time:
             _LOGGER.debug("Token expires at: %s", exp_time)
             return False
         _LOGGER.debug("Token expired on: %s", exp_time)
         return True
+
+    def _enphase_token_expiration_date(self, token) -> datetime.datetime:
+        decode = jwt.decode(
+            token, options={"verify_signature": False}, algorithms=["ES256"]
+        )
+        exp_epoch = decode["exp"]
+        # allow a buffer so we can try and grab it sooner
+        exp_epoch -= self.token_refresh_buffer_seconds
+        exp_time = datetime.datetime.fromtimestamp(exp_epoch)
+        return exp_time
 
     async def check_connection(self):
         """Check if the Envoy is reachable. Also check if HTTP or."""
@@ -432,7 +436,14 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         inverters_url = ENDPOINT_URL_PRODUCTION_INVERTERS.format(
             self.https_flag, self.host
         )
-        response = await self._async_fetch_with_retry(inverters_url)
+        if self.use_enlighten_owner_token:
+            response = await self._async_fetch_with_retry(inverters_url)
+        else:
+            # Inverter page on envoy with old firmware requires username/password
+            inverters_auth = httpx.DigestAuth(self.username, self.password)
+            response = await self._async_fetch_with_retry(
+                inverters_url, auth=inverters_auth
+            )
 
         if response.status_code == 401:
             # Legacy model R with fw <3.9 has no json, >=3.9 no inverters json
@@ -887,8 +898,9 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
         return None
 
     async def envoy_info(self):
-        """Return information reported by Envoy info.xml."""
+        """Return envoy information for diagnostics report."""
         device_data = {}
+        # if info.xml is accessible grab data from it
         if self.endpoint_info_results:
             try:
                 data = xmltodict.parse(self.endpoint_info_results.text)
@@ -897,5 +909,60 @@ class EnvoyReader:  # pylint: disable=too-many-instance-attributes
                 device_data["metered"] = data["envoy_info"]["device"]["imeter"]
             except Exception:  # pylint: disable=broad-except
                 pass
+
+        # add internal key information for envoy class
+        device_data["Using-model"] = self.endpoint_type
+        device_data["Using-httpsflag"] = self.https_flag
+        device_data["Using-MeteringEnabled"] = self.isMeteringEnabled
+        device_data["Using-GetInverters"] = self.get_inverters
+        device_data["Using-UseEnligthen"] = self.use_enlighten_owner_token
+        device_data["Using-InfoUpdateInterval"] = self.info_refresh_buffer_seconds
+        device_data["Using-hasgridstatus"] = self.has_grid_status
+
+        if self.use_enlighten_owner_token:
+            device_data[
+                "Using-TokenExpirationDate"
+            ] = self._enphase_token_expiration_date(self._token)
+
+        if self.endpoint_production_json_results:
+            device_data[
+                "Endpoint-production_json"
+            ] = self.endpoint_production_json_results.text
+        else:
+            device_data[
+                "Endpoint-production_json"
+            ] = self.endpoint_production_json_results
+        if self.endpoint_production_v1_results:
+            device_data[
+                "Endpoint-production_v1"
+            ] = self.endpoint_production_v1_results.text
+        else:
+            device_data["Endpoint-production_v1"] = self.endpoint_production_v1_results
+        if self.endpoint_production_results:
+            device_data["Endpoint-production"] = self.endpoint_production_results.text
+        else:
+            device_data["Endpoint-production"] = self.endpoint_production_results
+        if self.endpoint_production_inverters:
+            device_data[
+                "Endpoint-production_inverters"
+            ] = self.endpoint_production_inverters.text
+        else:
+            device_data[
+                "Endpoint-production_inverters"
+            ] = self.endpoint_production_inverters
+        if self.endpoint_ensemble_json_results:
+            device_data[
+                "Endpoint-ensemble_json"
+            ] = self.endpoint_ensemble_json_results.text
+        else:
+            device_data["Endpoint-ensemble_json"] = self.endpoint_ensemble_json_results
+        if self.endpoint_home_json_results:
+            device_data["Endpoint-home"] = self.endpoint_home_json_results.text
+        else:
+            device_data["Endpoint-home"] = self.endpoint_home_json_results
+        if self.endpoint_info_results:
+            device_data["Endpoint-info"] = self.endpoint_info_results.text
+        else:
+            device_data["Endpoint-info"] = self.endpoint_info_results
 
         return device_data
